@@ -32,6 +32,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 14px;min-height:40px}
 button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
 button.small{min-height:32px;padding:3px 10px;font-size:13px}
+button.danger{color:var(--bad);border-color:var(--bad)}
 button:disabled{opacity:.5;cursor:default}
 input,select,textarea{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 10px;min-height:40px;max-width:100%}
 textarea{width:100%;min-height:120px;font-family:var(--num);font-size:14px}
@@ -150,7 +151,7 @@ code{font-family:var(--num);font-size:13px;overflow-wrap:anywhere}
       <label>篩選班級<select id="stFilter"></select></label>
       <label class="grow">搜尋姓名<input id="stSearch" autocomplete="off"></label>
     </div>
-    <p class="muted">綁定碼是給家長在官方 LINE 輸入用的，請個別交給家長，不要印在卡片上。</p>
+    <p class="muted">綁定碼是給家長在官方 LINE 輸入用的，請個別交給家長，不要印在卡片上。要刪除學生，請先按「停用」，再按「刪除」。</p>
     <div class="scroll"><table><thead><tr><th>姓名</th><th>班級</th><th>學生代碼</th><th>家長綁定碼</th><th>已綁家長</th><th>狀態</th><th></th></tr></thead><tbody id="stBody"></tbody></table></div>
   </section>
 
@@ -304,7 +305,7 @@ function renderStudents(){
   $('stBody').innerHTML=list.map(s=>`<tr class="${s.status==='停用'?'off':''}"><td>${esc(s.name)}</td><td>${esc(s.cls)}</td>
     <td class="num">${esc(s.id)}</td><td class="num">${esc(s.bind)}</td><td class="num">${s.parents}</td>
     <td>${s.status==='停用'?'<span class="pill none">停用</span>':'<span class="pill ok">在學</span>'}</td>
-    <td class="acts"><button class="small" data-edit="${esc(s.id)}">編輯</button><button class="small" data-toggle="${esc(s.id)}">${s.status==='停用'?'恢復':'停用'}</button></td></tr>`).join('')
+    <td class="acts"><button class="small" data-edit="${esc(s.id)}">編輯</button><button class="small" data-toggle="${esc(s.id)}">${s.status==='停用'?'恢復':'停用'}</button>${s.status==='停用'?`<button class="small danger" data-del="${esc(s.id)}">刪除</button>`:''}</td></tr>`).join('')
     ||'<tr><td colspan="7" class="muted">還沒有學生。可以在上方新增，或用整批匯入。</td></tr>';
 }
 $('stFilter').onchange=renderStudents;$('stSearch').oninput=renderStudents;
@@ -316,6 +317,11 @@ $('stCancel').onclick=()=>setStudentForm(null);
 $('stBody').onclick=e=>{
   const b=e.target;
   if(b.dataset.edit){setStudentForm(D.students.find(s=>s.id===b.dataset.edit));$('stName').focus()}
+  if(b.dataset.del){
+    const s=D.students.find(x=>x.id===b.dataset.del);
+    if(b.dataset.armed){run('admin.deleteStudent',{id:s.id},'已刪除 '+s.name)}
+    else{b.dataset.armed='1';b.textContent='再按一次確認刪除';setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent='刪除'}},3000)}
+  }
   if(b.dataset.toggle){const s=D.students.find(x=>x.id===b.dataset.toggle);
     run('admin.saveStudent',{student:{id:s.id,name:s.name,cls:s.cls,status:s.status==='停用'?'在學':'停用'}},s.status==='停用'?'已恢復':'已停用，這張卡不能再打卡')}
 };
