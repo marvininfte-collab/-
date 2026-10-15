@@ -83,6 +83,8 @@ tr.off td{color:var(--muted)}
 .card b{font-size:17px}
 .card small{color:var(--muted)}
 code{font-family:var(--num);font-size:13px;overflow-wrap:anywhere}
+.navlink{color:var(--accent);font-size:14px;padding:6px 4px;text-decoration:none}
+.navlink:hover{text-decoration:underline}
 .acct{border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
 .acct .hook{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .acct .hook code{flex:1;min-width:0}
@@ -113,7 +115,7 @@ code{font-family:var(--num);font-size:13px;overflow-wrap:anywhere}
 <div id="app" hidden class="wrap">
   <header class="top">
     <h1>到班打卡後台</h1>
-    <div class="row"><span class="msg" id="flash"></span><button class="small" id="logout">登出</button></div>
+    <div class="row"><span class="msg" id="flash"></span><a class="navlink" href="./">門口打卡</a><a class="navlink" href="counter.html">櫃檯點名</a><button class="small" id="logout">登出</button></div>
   </header>
   <nav class="tabs" id="tabs">
     <button data-t="today" aria-selected="true">到班查詢</button>
@@ -230,7 +232,7 @@ async function run(action,data,done){
 }
 
 // 登入
-$('lgUrl').value=mem.get('ck-url');
+$('lgUrl').value=mem.get('ck-url')||(()=>{try{return JSON.parse(localStorage.getItem('ck-kiosk')).url}catch(e){return ''}})()||'';
 $('loginForm').onsubmit=async e=>{
   e.preventDefault();
   const c={url:$('lgUrl').value.trim(),pw:$('lgPw').value};

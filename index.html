@@ -92,6 +92,8 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .form{display:flex;flex-direction:column;gap:12px}
 .form label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
 .err{color:var(--bad);margin:0;min-height:1.5em}
+.links{margin:0;text-align:center;font-size:15px}
+.links a{color:var(--accent);padding:8px 6px;display:inline-block}
 
 @media (max-width:760px){
   html,body{height:auto}
@@ -149,6 +151,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
     <p class="err" id="setupErr"></p>
     <button class="primary" id="setupSave">連線</button>
     <button type="button" id="setupCancel">取消</button>
+    <p class="links"><a href="admin.html">開啟後台</a>　<a href="counter.html">櫃檯點名</a></p>
   </form>
 </dialog>
 
