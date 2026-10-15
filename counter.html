@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>櫃檯點名</title>
+<style>
+/* 版面：上方班級切換，下方大格名字，點一下就到班 */
+:root{
+  --bg:#f2f4f7; --surface:#ffffff; --ink:#15202b; --muted:#5d6b7a; --line:#dde2e8;
+  --accent:#1d5bd0; --accent-ink:#ffffff;
+  --ok:#0f7a55; --ok-bg:#e3f5ee; --bye:#1d5bd0; --bye-bg:#e4edfc;
+  --warn:#9a5b00; --warn-bg:#fdf1d9; --bad:#b93226; --bad-bg:#fbe6e3;
+  --font:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  --num:"SF Mono","Roboto Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#10161d; --surface:#19222c; --ink:#e9eef3; --muted:#93a1b0; --line:#2a3642;
+    --accent:#6ea0ff; --accent-ink:#0b1420;
+    --ok:#5fd3a6; --ok-bg:#12372b; --bye:#8db4ff; --bye-bg:#16294a;
+    --warn:#f0c064; --warn-bg:#3a2d10; --bad:#ff8a7d; --bad-bg:#40191a;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.5;
+  display:flex;flex-direction:column;gap:14px;min-height:100vh;padding-inline:20px;
+  padding-block:calc(16px + env(safe-area-inset-top,0px)) calc(90px + env(safe-area-inset-bottom,0px))}
+[hidden]{display:none!important}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 16px;min-height:44px}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button.quiet{min-height:36px;padding:4px 12px;font-size:14px;color:var(--muted)}
+button:disabled{opacity:.45;cursor:default}
+input{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:10px 14px;width:100%;min-height:44px}
+
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 20px}
+.brand{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+h1{font-size:24px;margin:0;letter-spacing:.04em}
+.sync{font-size:13px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 10px}
+.sync.off{color:var(--warn);background:var(--warn-bg);border-color:transparent}
+.clock{display:flex;align-items:baseline;gap:12px;color:var(--muted)}
+.clock strong{font-family:var(--num);font-size:26px;color:var(--ink);font-variant-numeric:tabular-nums}
+
+.classes{display:flex;gap:8px;flex-wrap:wrap}
+.classes button{border-radius:999px;min-height:44px;padding:6px 16px;display:flex;gap:8px;align-items:baseline}
+.classes button small{font-family:var(--num);color:var(--muted);font-variant-numeric:tabular-nums}
+.classes button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.classes button[aria-pressed="true"] small{color:inherit;opacity:.75}
+.tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.tools .grow{flex:1;min-width:180px}
+.legend{display:flex;gap:12px;font-size:14px;color:var(--muted);flex-wrap:wrap}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-1px;border:1px solid var(--line)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.kid{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:92px;padding:12px 14px;text-align:left;border-radius:14px;border:2px solid var(--line);background:var(--surface)}
+.kid b{font-size:24px;line-height:1.25;overflow-wrap:anywhere}
+.kid span{font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
+.kid.in{background:var(--ok-bg);border-color:var(--ok)} .kid.in span{color:var(--ok);font-weight:600}
+.kid.out{background:var(--bye-bg);border-color:transparent} .kid.out b{color:var(--muted);font-weight:500} .kid.out span{color:var(--bye)}
+.kid.flash{animation:pop .35s ease-out}
+@keyframes pop{0%{transform:scale(.94)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.kid.flash{animation:none}}
+.empty{color:var(--muted);margin:0}
+
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));
+  display:flex;align-items:center;gap:14px;background:var(--ink);color:var(--bg);border-radius:14px;padding:10px 10px 10px 18px;
+  box-shadow:0 8px 30px rgba(0,0,0,.25);max-width:calc(100vw - 32px);font-size:17px}
+.toast button{background:transparent;color:inherit;border-color:currentColor;min-height:40px}
+
+dialog{border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);padding:20px;width:min(440px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.sheet{display:flex;flex-direction:column;gap:10px}
+.sheet h2{margin:0;font-size:22px}
+.sheet p{margin:0;color:var(--muted)}
+.sheet button{min-height:54px;font-size:18px}
+.sheet .bye{background:var(--bye-bg);color:var(--bye);border-color:transparent;font-weight:700}
+.form{display:flex;flex-direction:column;gap:12px}
+.form label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
+.err{color:var(--bad);margin:0;min-height:1.5em}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><h1>櫃檯點名</h1><span class="sync" id="sync">尚未連線</span></div>
+  <div class="clock"><span id="date"></span><strong id="clock"></strong><button class="quiet" id="openSetup">設定</button></div>
+</header>
+
+<nav class="classes" id="classes" aria-label="班級"></nav>
+<div class="tools">
+  <div class="grow"><input id="q" placeholder="搜尋姓名" autocomplete="off" aria-label="搜尋姓名"></div>
+  <div class="legend"><span><i></i>未到</span><span><i style="background:var(--ok-bg);border-color:var(--ok)"></i>在班</span><span><i style="background:var(--bye-bg)"></i>已離班</span></div>
+</div>
+<p class="empty" id="hint">點一下名字就完成到班。在班的學生再點一下，可以登記離班。</p>
+<main class="grid" id="grid"></main>
+<p class="empty" id="none" hidden>這個班級沒有學生。</p>
+
+<div class="toast" id="toast" hidden role="status"><span id="toastText"></span><button id="undo">復原</button></div>
+
+<dialog id="act">
+  <div class="sheet">
+    <h2 id="actName"></h2>
+    <p id="actInfo"></p>
+    <button class="bye" id="actOut">登記離班</button>
+    <button id="actUndo"></button>
+    <button id="actClose">關閉</button>
+  </div>
+</dialog>
+
+<dialog id="setup">
+  <form class="form" id="setupForm">
+    <h2>連線設定</h2>
+    <label>系統網址（Apps Script 部署後的網址）<input id="cfgUrl" inputmode="url" autocomplete="off" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    <label>打卡機密碼<input id="cfgPw" autocomplete="off"></label>
+    <p class="err" id="setupErr"></p>
+    <button class="primary" id="setupSave">連線</button>
+    <button type="button" id="setupCancel">取消</button>
+  </form>
+</dialog>
+
+<script>
+const $=id=>document.getElementById(id);
+const pad=n=>String(n).padStart(2,'0');
+const hm=t=>{const d=new Date(t);return pad(d.getHours())+':'+pad(d.getMinutes())};
+const ymd=()=>{const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())};
+const LS={
+  get(k,d){try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}},
+  set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+};
+
+let cfg=LS.get('ck-kiosk',null);              // 和打卡機共用連線設定
+let roster=LS.get('ct-roster',[]),classes=LS.get('ct-classes',[]);
+let cur=LS.get('ct-class','');
+let day=ymd();
+let recs=LS.get('ct-recs',{day:'',map:{}});recs=recs.day===day?recs.map:{};
+let queue=LS.get('ct-queue',[]);
+let online=false,syncing=false;
+const keep=()=>{LS.set('ct-recs',{day,map:recs});LS.set('ct-queue',queue)};
+const byId=()=>{const m={};roster.forEach(s=>m[s.id]=s);return m};
+
+function api(action,data,c){
+  c=c||cfg;
+  return fetch(c.url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify(Object.assign({action,pw:c.pw},data||{}))})
+    .then(r=>r.json()).then(j=>{if(!j.ok)throw new Error(j.error||'連線失敗');return j});
+}
+function toMs(t){if(!t)return 0;const p=t.split(':'),d=new Date();d.setHours(+p[0],+p[1],0,0);return d.getTime()}
+function applyLocal(ev){
+  const r=recs[ev.id]||(recs[ev.id]={});
+  if(ev.type==='in'){if(!r.in)r.in=ev.t}
+  else if(ev.type==='out'){if(!r.out)r.out=ev.t}
+  else if(ev.type==='undoIn'){delete recs[ev.id]}
+  else if(ev.type==='undoOut'){r.out=0}
+}
+async function sync(){
+  if(!cfg||syncing)return;
+  syncing=true;const sending=queue.slice();
+  try{
+    const j=await api('kiosk.sync',{events:sending});
+    queue=queue.slice(sending.length);
+    roster=j.students;classes=j.classes||[];
+    LS.set('ct-roster',roster);LS.set('ct-classes',classes);
+    if(j.date===ymd()){
+      day=j.date;recs={};
+      j.records.forEach(r=>{recs[r.id]={in:toMs(r.in),out:toMs(r.out)}});
+      queue.forEach(applyLocal);
+    }
+    online=true;
+  }catch(e){online=false}
+  syncing=false;keep();render();renderSync();
+}
+function renderSync(){
+  const el=$('sync');
+  if(!cfg){el.textContent='尚未連線';el.className='sync off';return}
+  if(queue.length){el.textContent=(online?'上傳中':'連線中斷')+'，'+queue.length+' 筆待上傳';el.className='sync off'}
+  else if(online){el.textContent='已同步';el.className='sync'}
+  else{el.textContent='連線中斷，紀錄會稍後補傳';el.className='sync off'}
+}
+function renderClock(){
+  const d=new Date(),w='日一二三四五六'[d.getDay()];
+  $('date').textContent=(d.getMonth()+1)+' 月 '+d.getDate()+' 日（'+w+'）';
+  $('clock').textContent=pad(d.getHours())+':'+pad(d.getMinutes());
+  if(ymd()!==day){day=ymd();recs={};keep();render()}
+}
+
+// 班級：今天有課的排前面，依上課時間排序
+function classOrder(){
+  const wd='日一二三四五六'[new Date().getDay()];
+  const names=[...new Set(roster.map(s=>s.cls))];
+  const info={};classes.forEach(c=>info[c.name]=c);
+  const today=n=>info[n]&&info[n].days&&info[n].days.includes(wd);
+  return names.sort((a,b)=>(today(b)-today(a))||String(info[a]&&info[a].start||'99').localeCompare(String(info[b]&&info[b].start||'99'))||a.localeCompare(b));
+}
+function render(){
+  const order=classOrder();
+  if(!order.includes(cur))cur=order[0]||'';
+  const nav=$('classes');nav.textContent='';
+  order.forEach(c=>{
+    const list=roster.filter(s=>s.cls===c),here=list.filter(s=>recs[s.id]&&recs[s.id].in).length;
+    const b=document.createElement('button');b.setAttribute('aria-pressed',c===cur);
+    const t=document.createElement('span');t.textContent=c;
+    const n=document.createElement('small');n.textContent=here+'/'+list.length;
+    b.append(t,n);b.onclick=()=>{cur=c;LS.set('ct-class',cur);$('q').value='';render()};nav.appendChild(b);
+  });
+  const q=$('q').value.trim();
+  const list=roster.filter(s=>q?s.name.includes(q):s.cls===cur);
+  const g=$('grid');g.textContent='';
+  list.forEach(s=>{
+    const r=recs[s.id]||{},b=document.createElement('button');
+    b.className='kid'+(r.out?' out':r.in?' in':'');b.dataset.id=s.id;
+    const n=document.createElement('b');n.textContent=s.name;
+    const t=document.createElement('span');
+    t.textContent=r.out?hm(r.out)+' 離班':r.in?hm(r.in)+' 到班':(q?s.cls+'・未到':'未到');
+    b.append(n,t);g.appendChild(b);
+  });
+  $('none').hidden=list.length>0||!roster.length;
+  $('none').textContent=q?'找不到「'+q+'」。':'這個班級沒有學生。';
+}
+
+// 點名
+let toastTimer=null,lastEv=null;
+function toast(text,ev){
+  lastEv=ev;$('toastText').textContent=text;$('undo').hidden=!ev;$('toast').hidden=false;
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>{$('toast').hidden=true;lastEv=null},5000);
+}
+function push(ev){applyLocal(ev);queue.push(ev);keep();render();renderSync();sync()}
+function bump(id){const el=$('grid').querySelector('[data-id="'+id+'"]');if(el){el.classList.add('flash')}}
+$('grid').onclick=e=>{
+  const b=e.target.closest('.kid');if(!b)return;
+  const id=b.dataset.id,s=byId()[id],r=recs[id]||{};
+  if(!r.in&&!r.out){
+    push({id,type:'in',t:Date.now(),manual:true,how:'櫃檯'});bump(id);
+    toast(s.name+' 到班 '+hm(Date.now()),{id,type:'undoIn'});return;
+  }
+  openAct(s,r);
+};
+$('undo').onclick=()=>{
+  if(!lastEv)return;const ev=Object.assign({t:Date.now()},lastEv),s=byId()[ev.id];
+  push(ev);$('toast').hidden=true;lastEv=null;
+  toast((s?s.name:'')+' 已復原',null);
+};
+
+const act=$('act');let actId='';
+function openAct(s,r){
+  actId=s.id;$('actName').textContent=s.name+'（'+s.cls+'）';
+  $('actInfo').textContent=(r.in?hm(r.in)+' 到班':'')+(r.out?'・'+hm(r.out)+' 離班':'・在班中');
+  $('actOut').hidden=!!r.out;
+  $('actUndo').textContent=r.out?'取消離班（按錯了）':'取消到班（按錯了）';
+  act.showModal();
+}
+$('actOut').onclick=()=>{
+  const s=byId()[actId];act.close();
+  push({id:actId,type:'out',t:Date.now(),manual:true,how:'櫃檯'});
+  toast(s.name+' 離班 '+hm(Date.now()),{id:actId,type:'undoOut'});
+};
+$('actUndo').onclick=()=>{
+  const r=recs[actId]||{};act.close();
+  push({id:actId,type:r.out?'undoOut':'undoIn',t:Date.now()});
+};
+$('actClose').onclick=()=>act.close();
+$('q').oninput=render;
+
+// 連線設定
+const setup=$('setup');
+function openSetup(){
+  $('cfgUrl').value=cfg?cfg.url:'';$('cfgPw').value=cfg?cfg.pw:'';$('setupErr').textContent='';
+  $('setupCancel').hidden=!cfg;setup.showModal();
+}
+$('openSetup').onclick=openSetup;
+$('setupCancel').onclick=()=>setup.close();
+setup.addEventListener('cancel',e=>{if(!cfg)e.preventDefault()});
+$('setupForm').onsubmit=async e=>{
+  e.preventDefault();
+  const c={url:$('cfgUrl').value.trim(),pw:$('cfgPw').value.trim()};
+  if(!/^https?:\/\//.test(c.url)||!c.pw){$('setupErr').textContent='請填入網址和打卡機密碼';return}
+  $('setupSave').disabled=true;$('setupErr').textContent='連線中…';
+  try{await api('kiosk.sync',{events:[]},c);cfg=c;LS.set('ck-kiosk',cfg);setup.close();sync()}
+  catch(err){$('setupErr').textContent=err.name==='TypeError'?'連不上系統，請檢查網址和網路':err.message}
+  $('setupSave').disabled=false;
+};
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')sync()});
+
+renderClock();setInterval(renderClock,5000);
+render();renderSync();
+if(cfg)sync();else openSetup();
+setInterval(sync,30000);
+setInterval(()=>{if(queue.length)sync()},8000);
+</script>
+</body>
+</html>
