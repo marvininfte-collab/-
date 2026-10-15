@@ -83,6 +83,22 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 .err{color:var(--bad);margin:0;min-height:1.5em}
 .links{margin:0;text-align:center;font-size:15px}
 .links a{color:var(--accent);padding:8px 6px;display:inline-block}
+
+.modes{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{min-height:52px;padding:8px 20px;font-size:18px;font-weight:700;border-width:2px}
+.seg button[aria-pressed="true"].m-in{background:var(--ok);border-color:var(--ok);color:#fff}
+.seg button[aria-pressed="true"].m-late{background:var(--warn);border-color:var(--warn);color:#fff}
+.seg button[aria-pressed="true"].m-out{background:var(--bye);border-color:var(--bye);color:#fff}
+.seg button[aria-pressed="true"].m-leave{background:var(--muted);border-color:var(--muted);color:#fff}
+.bulk{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.bulk button{min-height:52px;font-weight:600}
+.bulk button.armed{background:var(--warn-bg);border-color:var(--warn);color:var(--warn)}
+.summary{display:flex;gap:6px 16px;flex-wrap:wrap;color:var(--muted);font-size:15px}
+.summary b{color:var(--ink);font-family:var(--num);font-variant-numeric:tabular-nums;margin-right:3px}
+.kid.leave{background:transparent;border-style:dashed} .kid.leave b{color:var(--muted)}
+.tag{display:inline-block;font-size:12px;font-weight:700;border-radius:6px;padding:0 6px;margin-left:4px;color:var(--warn);background:var(--warn-bg)}
+.auto{font-size:13px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -92,13 +108,28 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
 </header>
 
 <nav class="classes" id="classes" aria-label="班級"></nav>
+
+<div class="modes">
+  <div class="seg" role="group" aria-label="點名方式">
+    <button class="m-in" data-mode="in" aria-pressed="true">到班</button>
+    <button class="m-late" data-mode="late" aria-pressed="false">遲到</button>
+    <button class="m-out" data-mode="out" aria-pressed="false">離班</button>
+    <button class="m-leave" data-mode="leave" aria-pressed="false">請假</button>
+  </div>
+  <div class="bulk">
+    <button id="allIn">全班到班</button>
+    <button id="allOut">全班離班</button>
+  </div>
+</div>
+
 <div class="tools">
   <div class="grow"><input id="q" placeholder="搜尋姓名" autocomplete="off" aria-label="搜尋姓名"></div>
-  <div class="legend"><span><i></i>未到</span><span><i style="background:var(--ok-bg);border-color:var(--ok)"></i>在班</span><span><i style="background:var(--bye-bg)"></i>已離班</span></div>
+  <div class="summary" id="summary"></div>
 </div>
-<p class="empty" id="hint">點一下名字就完成到班。在班的學生再點一下，可以登記離班。</p>
+<p class="empty" id="hint"></p>
 <main class="grid" id="grid"></main>
 <p class="empty" id="none" hidden>這個班級沒有學生。</p>
+<p class="auto" id="autoInfo"></p>
 
 <div class="toast" id="toast" hidden role="status"><span id="toastText"></span><button id="undo">復原</button></div>
 
@@ -106,8 +137,7 @@ dialog::backdrop{background:rgba(0,0,0,.45)}
   <div class="sheet">
     <h2 id="actName"></h2>
     <p id="actInfo"></p>
-    <button class="bye" id="actOut">登記離班</button>
-    <button id="actUndo"></button>
+    <button id="actDo"></button>
     <button id="actClose">關閉</button>
   </div>
 </dialog>
@@ -136,13 +166,15 @@ const LS={
 
 let cfg=LS.get('ck-kiosk',null);              // 和打卡機共用連線設定
 let roster=LS.get('ct-roster',[]),classes=LS.get('ct-classes',[]);
-let cur=LS.get('ct-class','');
+let cur=LS.get('ct-class',''),mode='in';
 let day=ymd();
-let recs=LS.get('ct-recs',{day:'',map:{}});recs=recs.day===day?recs.map:{};
+let saved=LS.get('ct-recs2',{day:'',map:{},leaves:{}});
+let recs=saved.day===day?saved.map:{},leaves=saved.day===day?saved.leaves:{};
 let queue=LS.get('ct-queue',[]);
 let online=false,syncing=false;
-const keep=()=>{LS.set('ct-recs',{day,map:recs});LS.set('ct-queue',queue)};
+const keep=()=>{LS.set('ct-recs2',{day,map:recs,leaves});LS.set('ct-queue',queue)};
 const byId=()=>{const m={};roster.forEach(s=>m[s.id]=s);return m};
+const clsInfo=()=>{const m={};classes.forEach(c=>m[c.name]=c);return m};
 
 function api(action,data,c){
   c=c||cfg;
@@ -152,8 +184,10 @@ function api(action,data,c){
 }
 function toMs(t){if(!t)return 0;const p=t.split(':'),d=new Date();d.setHours(+p[0],+p[1],0,0);return d.getTime()}
 function applyLocal(ev){
+  if(ev.type==='leave'){leaves[ev.id]=true;return}
+  if(ev.type==='unleave'){delete leaves[ev.id];return}
   const r=recs[ev.id]||(recs[ev.id]={});
-  if(ev.type==='in'){if(!r.in)r.in=ev.t}
+  if(ev.type==='in'){if(!r.in){r.in=ev.t;r.late=!!ev.late}}
   else if(ev.type==='out'){if(!r.out)r.out=ev.t}
   else if(ev.type==='undoIn'){delete recs[ev.id]}
   else if(ev.type==='undoOut'){r.out=0}
@@ -167,8 +201,9 @@ async function sync(){
     roster=j.students;classes=j.classes||[];
     LS.set('ct-roster',roster);LS.set('ct-classes',classes);
     if(j.date===ymd()){
-      day=j.date;recs={};
-      j.records.forEach(r=>{recs[r.id]={in:toMs(r.in),out:toMs(r.out)}});
+      day=j.date;recs={};leaves={};
+      j.records.forEach(r=>{recs[r.id]={in:toMs(r.in),out:toMs(r.out),late:r.note==='遲到',auto:r.outHow==='自動'}});
+      (j.leaves||[]).forEach(id=>{leaves[id]=true});
       queue.forEach(applyLocal);
     }
     online=true;
@@ -186,17 +221,20 @@ function renderClock(){
   const d=new Date(),w='日一二三四五六'[d.getDay()];
   $('date').textContent=(d.getMonth()+1)+' 月 '+d.getDate()+' 日（'+w+'）';
   $('clock').textContent=pad(d.getHours())+':'+pad(d.getMinutes());
-  if(ymd()!==day){day=ymd();recs={};keep();render()}
+  if(ymd()!==day){day=ymd();recs={};leaves={};keep();render()}
 }
 
-// 班級：今天有課的排前面，依上課時間排序
+// 學生目前狀態：none 未到、in 在班、out 已離班、leave 請假
+function state(id){const r=recs[id]||{};return r.out?'out':r.in?'in':leaves[id]?'leave':'none'}
+function isLate(s){const r=recs[s.id]||{},c=clsInfo()[s.cls];return !!r.in&&(r.late||(!!c&&!!c.start&&hm(r.in)>c.start))}
+
 function classOrder(){
-  const wd='日一二三四五六'[new Date().getDay()];
+  const wd='日一二三四五六'[new Date().getDay()],info=clsInfo();
   const names=[...new Set(roster.map(s=>s.cls))];
-  const info={};classes.forEach(c=>info[c.name]=c);
   const today=n=>info[n]&&info[n].days&&info[n].days.includes(wd);
   return names.sort((a,b)=>(today(b)-today(a))||String(info[a]&&info[a].start||'99').localeCompare(String(info[b]&&info[b].start||'99'))||a.localeCompare(b));
 }
+const HINT={in:'點名字登記到班。',late:'點名字登記到班，並標記遲到。',out:'點在班學生的名字登記離班。',leave:'點名字登記請假，再點一次取消請假。'};
 function render(){
   const order=classOrder();
   if(!order.includes(cur))cur=order[0]||'';
@@ -206,63 +244,100 @@ function render(){
     const b=document.createElement('button');b.setAttribute('aria-pressed',c===cur);
     const t=document.createElement('span');t.textContent=c;
     const n=document.createElement('small');n.textContent=here+'/'+list.length;
-    b.append(t,n);b.onclick=()=>{cur=c;LS.set('ct-class',cur);$('q').value='';render()};nav.appendChild(b);
+    b.append(t,n);b.onclick=()=>{cur=c;LS.set('ct-class',cur);$('q').value='';disarm();render()};nav.appendChild(b);
   });
+  document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode===mode));
+  $('hint').textContent=HINT[mode];
   const q=$('q').value.trim();
   const list=roster.filter(s=>q?s.name.includes(q):s.cls===cur);
   const g=$('grid');g.textContent='';
   list.forEach(s=>{
-    const r=recs[s.id]||{},b=document.createElement('button');
-    b.className='kid'+(r.out?' out':r.in?' in':'');b.dataset.id=s.id;
+    const r=recs[s.id]||{},st=state(s.id),b=document.createElement('button');
+    b.className='kid'+(st==='none'?'':' '+st);b.dataset.id=s.id;
     const n=document.createElement('b');n.textContent=s.name;
     const t=document.createElement('span');
-    t.textContent=r.out?hm(r.out)+' 離班':r.in?hm(r.in)+' 到班':(q?s.cls+'・未到':'未到');
+    t.textContent=st==='out'?hm(r.in||r.out)+' → '+hm(r.out)+(r.auto?' 自動':''):st==='in'?hm(r.in)+' 到班':st==='leave'?'請假':(q?s.cls+'・':'')+'未到';
+    if(isLate(s)){const g2=document.createElement('em');g2.className='tag';g2.textContent='遲到';g2.style.fontStyle='normal';t.appendChild(g2)}
     b.append(n,t);g.appendChild(b);
   });
   $('none').hidden=list.length>0||!roster.length;
   $('none').textContent=q?'找不到「'+q+'」。':'這個班級沒有學生。';
+  const cl=roster.filter(s=>s.cls===cur),cnt={none:0,in:0,out:0,leave:0};cl.forEach(s=>cnt[state(s.id)]++);
+  const late=cl.filter(isLate).length;
+  $('summary').innerHTML=`<span><b>${cnt.in}</b>在班</span><span><b>${cnt.out}</b>已離班</span><span><b>${late}</b>遲到</span><span><b>${cnt.leave}</b>請假</span><span><b>${cnt.none}</b>未到</span>`;
+  const c=clsInfo()[cur];
+  $('autoInfo').textContent=c&&c.end?cur+' 下課時間 '+c.end+'，還沒離班的學生會由系統自動登記離班（依後台設定）。':'';
 }
 
-// 點名
-let toastTimer=null,lastEv=null;
-function toast(text,ev){
-  lastEv=ev;$('toastText').textContent=text;$('undo').hidden=!ev;$('toast').hidden=false;
-  clearTimeout(toastTimer);toastTimer=setTimeout(()=>{$('toast').hidden=true;lastEv=null},5000);
+// 點名動作
+let toastTimer=null,lastUndo=null;
+function toast(text,undo){
+  lastUndo=undo&&undo.length?undo:null;$('toastText').textContent=text;$('undo').hidden=!lastUndo;$('toast').hidden=false;
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>{$('toast').hidden=true;lastUndo=null},5000);
 }
-function push(ev){applyLocal(ev);queue.push(ev);keep();render();renderSync();sync()}
-function bump(id){const el=$('grid').querySelector('[data-id="'+id+'"]');if(el){el.classList.add('flash')}}
+function push(evs){
+  const t=Date.now();evs.forEach(ev=>{ev.t=ev.t||t;applyLocal(ev);queue.push(ev)});
+  keep();render();renderSync();sync();
+}
+const UNDO={in:'undoIn',out:'undoOut',leave:'unleave',unleave:'leave'};
+function undoOf(evs){return evs.slice().reverse().map(ev=>({id:ev.id,type:UNDO[ev.type]}))}
+function bump(id){const el=$('grid').querySelector('[data-id="'+id+'"]');if(el)el.classList.add('flash')}
+
 $('grid').onclick=e=>{
   const b=e.target.closest('.kid');if(!b)return;
-  const id=b.dataset.id,s=byId()[id],r=recs[id]||{};
-  if(!r.in&&!r.out){
-    push({id,type:'in',t:Date.now(),manual:true,how:'櫃檯'});bump(id);
-    toast(s.name+' 到班 '+hm(Date.now()),{id,type:'undoIn'});return;
+  const id=b.dataset.id,s=byId()[id],st=state(id),now=hm(Date.now());
+  let evs=null,msg='';
+  if(mode==='in'||mode==='late'){
+    const late=mode==='late';
+    if(st==='none'||st==='leave'){
+      evs=(st==='leave'?[{id,type:'unleave'}]:[]).concat([{id,type:'in',manual:true,how:'櫃檯',late}]);
+      msg=s.name+' 到班 '+now+(late?'（遲到）':'');
+    }else if(st==='in')return openAct(s,'取消到班（按錯了）',[{id,type:'undoIn'}]);
+    else return toast(s.name+' 已經離班了',null);
+  }else if(mode==='out'){
+    if(st==='in'){evs=[{id,type:'out',manual:true,how:'櫃檯'}];msg=s.name+' 離班 '+now}
+    else if(st==='out')return openAct(s,'取消離班（按錯了）',[{id,type:'undoOut'}]);
+    else return toast(s.name+(st==='leave'?' 今天請假':' 還沒到班'),null);
+  }else if(mode==='leave'){
+    if(st==='none'){evs=[{id,type:'leave'}];msg=s.name+' 已登記請假'}
+    else if(st==='leave'){evs=[{id,type:'unleave'}];msg=s.name+' 已取消請假'}
+    else return toast(s.name+' 已經到班，不能請假',null);
   }
-  openAct(s,r);
+  push(evs);bump(id);toast(msg,undoOf(evs));
 };
 $('undo').onclick=()=>{
-  if(!lastEv)return;const ev=Object.assign({t:Date.now()},lastEv),s=byId()[ev.id];
-  push(ev);$('toast').hidden=true;lastEv=null;
-  toast((s?s.name:'')+' 已復原',null);
+  if(!lastUndo)return;const evs=lastUndo;push(evs);toast('已復原',null);
 };
 
-const act=$('act');let actId='';
-function openAct(s,r){
-  actId=s.id;$('actName').textContent=s.name+'（'+s.cls+'）';
-  $('actInfo').textContent=(r.in?hm(r.in)+' 到班':'')+(r.out?'・'+hm(r.out)+' 離班':'・在班中');
-  $('actOut').hidden=!!r.out;
-  $('actUndo').textContent=r.out?'取消離班（按錯了）':'取消到班（按錯了）';
-  act.showModal();
+// 全班到班／全班離班：按一次後 3 秒內再按一次才執行
+let armedBtn=null,armTimer=null;
+function disarm(){if(armedBtn){armedBtn.classList.remove('armed');armedBtn.textContent=armedBtn.dataset.label;armedBtn=null}clearTimeout(armTimer)}
+function bulk(btn,kind){
+  const cl=roster.filter(s=>s.cls===cur);
+  const targets=kind==='in'?cl.filter(s=>state(s.id)==='none'):cl.filter(s=>state(s.id)==='in');
+  if(!targets.length){disarm();return toast(kind==='in'?cur+' 沒有未到的學生':cur+' 沒有在班的學生',null)}
+  if(armedBtn!==btn){
+    disarm();armedBtn=btn;btn.dataset.label=btn.dataset.label||btn.textContent;
+    btn.classList.add('armed');btn.textContent='再按一次：'+targets.length+' 人'+(kind==='in'?'到班':'離班');
+    armTimer=setTimeout(disarm,3000);return;
+  }
+  disarm();
+  const evs=targets.map(s=>({id:s.id,type:kind,manual:true,how:'櫃檯'}));
+  push(evs);toast(cur+' '+targets.length+' 人'+(kind==='in'?'到班':'離班')+' '+hm(Date.now()),undoOf(evs));
 }
-$('actOut').onclick=()=>{
-  const s=byId()[actId];act.close();
-  push({id:actId,type:'out',t:Date.now(),manual:true,how:'櫃檯'});
-  toast(s.name+' 離班 '+hm(Date.now()),{id:actId,type:'undoOut'});
-};
-$('actUndo').onclick=()=>{
-  const r=recs[actId]||{};act.close();
-  push({id:actId,type:r.out?'undoOut':'undoIn',t:Date.now()});
-};
+$('allIn').onclick=e=>bulk(e.currentTarget,'in');
+$('allOut').onclick=e=>bulk(e.currentTarget,'out');
+
+document.querySelector('.seg').onclick=e=>{const b=e.target.closest('button');if(!b)return;mode=b.dataset.mode;disarm();render()};
+
+const act=$('act');let actEvs=null;
+function openAct(s,label,evs){
+  const r=recs[s.id]||{};actEvs=evs;
+  $('actName').textContent=s.name+'（'+s.cls+'）';
+  $('actInfo').textContent=(r.in?hm(r.in)+' 到班':'')+(r.out?'・'+hm(r.out)+' 離班':'・在班中');
+  $('actDo').textContent=label;act.showModal();
+}
+$('actDo').onclick=()=>{act.close();if(actEvs){push(actEvs);toast('已修改',null)}};
 $('actClose').onclick=()=>act.close();
 $('q').oninput=render;
 
