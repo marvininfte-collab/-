@@ -227,6 +227,11 @@ function flash(text,bad){
   const f=$('flash');f.textContent=text;f.className='msg '+(bad?'err':'good');
   clearTimeout(flashTimer);flashTimer=setTimeout(()=>{f.textContent=''},bad?6000:2500);
 }
+// 先在畫面上更新，再送到系統；失敗時重新載入正確資料
+async function fast(change,action,data,done){
+  change();render();flash('處理中…');
+  if(!(await run(action,data,done))){try{D=await api('admin.load',{});render()}catch(e){}}
+}
 async function run(action,data,done){
   try{D=await api(action,data);render();flash(done||'已儲存');return true}
   catch(e){flash(e.name==='TypeError'?'連不上系統，請檢查網路':e.message,true);return false}
@@ -298,7 +303,7 @@ function renderToday(){
   $('tdBody').innerHTML=rowsHtml||'<tr><td colspan="6" class="muted">這一天沒有應到的學生，也沒有打卡紀錄。</td></tr>';
   $('tdStats').innerHTML=`<span><b>${due}</b>應到</span><span><b>${here}</b>在班</span><span><b>${gone}</b>已離班</span><span><b>${miss}</b>未到</span><span><b>${off}</b>請假</span>`;
 }
-$('tdBody').onchange=e=>{const id=e.target.dataset.leave;if(id)run('admin.leave',{id,on:e.target.checked},e.target.checked?'已登記請假':'已取消請假')};
+$('tdBody').onchange=e=>{const id=e.target.dataset.leave,on=e.target.checked;if(id)fast(()=>{D.leaves=D.leaves.filter(x=>x!==id);if(on)D.leaves.push(id)},'admin.leave',{id,on},on?'已登記請假':'已取消請假')};
 $('tdCls').onchange=renderToday;$('tdAll').onchange=renderToday;
 $('tdDate').onchange=async()=>{if(!$('tdDate').value)return;try{D=await api('admin.load',{date:$('tdDate').value});render()}catch(e){flash(e.message,true)}};
 $('tdReload').onclick=()=>run('admin.load',{},'已更新');
@@ -324,11 +329,11 @@ $('stBody').onclick=e=>{
   if(b.dataset.edit){setStudentForm(D.students.find(s=>s.id===b.dataset.edit));$('stName').focus()}
   if(b.dataset.del){
     const s=D.students.find(x=>x.id===b.dataset.del);
-    if(b.dataset.armed){run('admin.deleteStudent',{id:s.id},'已刪除 '+s.name)}
+    if(b.dataset.armed){fast(()=>{D.students=D.students.filter(x=>x.id!==s.id)},'admin.deleteStudent',{id:s.id},'已刪除 '+s.name)}
     else{b.dataset.armed='1';b.textContent='再按一次確認刪除';setTimeout(()=>{if(b.isConnected){delete b.dataset.armed;b.textContent='刪除'}},3000)}
   }
-  if(b.dataset.toggle){const s=D.students.find(x=>x.id===b.dataset.toggle);
-    run('admin.saveStudent',{student:{id:s.id,name:s.name,cls:s.cls,status:s.status==='停用'?'在學':'停用'}},s.status==='停用'?'已恢復':'已停用，這張卡不能再打卡')}
+  if(b.dataset.toggle){const s=D.students.find(x=>x.id===b.dataset.toggle),to=s.status==='停用'?'在學':'停用';
+    fast(()=>{s.status=to},'admin.saveStudent',{student:{id:s.id,name:s.name,cls:s.cls,status:to}},to==='在學'?'已恢復':'已停用，這張卡不能再打卡')}
 };
 $('stForm').onsubmit=async e=>{
   e.preventDefault();
