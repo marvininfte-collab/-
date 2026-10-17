@@ -175,7 +175,10 @@ code{font-family:var(--num);font-size:13px;overflow-wrap:anywhere}
       <button type="button" id="clCancel" hidden>取消編輯</button>
     </form>
     <p class="muted">未到提醒依上課日和上課時間計算，沒填的班級不會提醒。</p>
-    <div class="scroll"><table><thead><tr><th>班級</th><th>上課日</th><th>時間</th><th>在學人數</th><th></th></tr></thead><tbody id="clBody"></tbody></table></div>
+    <div class="bulkbar" id="clBulk" hidden><span id="clSelN"></span>
+      <label style="flex-direction:row;align-items:center;gap:6px;color:var(--ink);font-size:14px"><input type="checkbox" id="clWith" style="min-height:0">連同班上的學生一起刪除</label>
+      <button class="small danger" id="ckDel">刪除</button><button class="small" id="ckClear">取消選取</button></div>
+    <div class="scroll"><table><thead><tr><th><input type="checkbox" id="clAll" aria-label="全選" style="min-height:0"></th><th>班級</th><th>上課日</th><th>時間</th><th>在學人數</th><th></th></tr></thead><tbody id="clBody"></tbody></table></div>
   </section>
 
   <section id="t-cards" class="panel" hidden>
@@ -385,11 +388,34 @@ $('imBtn').onclick=async()=>{
 $('clDays').innerHTML=[...DAYS].map(d=>`<label><input type="checkbox" value="${d}" style="min-height:0">${d}</label>`).join('');
 function renderClasses(){
   const n={};D.students.forEach(s=>{if(s.status!=='停用')n[s.cls]=(n[s.cls]||0)+1});
-  $('clBody').innerHTML=D.classes.map(c=>`<tr><td>${esc(c.name)}</td><td>${esc([...DAYS].filter(d=>c.days.includes(d)).join(' ')||'未設定')}</td>
+  for(const c of [...csel])if(!D.classes.some(x=>x.name===c))csel.delete(c);
+  $('clBody').innerHTML=D.classes.map(c=>`<tr class="${csel.has(c.name)?'sel':''}"><td><input type="checkbox" data-cpick="${esc(c.name)}" ${csel.has(c.name)?'checked':''} aria-label="選取 ${esc(c.name)}" style="min-height:0"></td><td>${esc(c.name)}</td><td>${esc([...DAYS].filter(d=>c.days.includes(d)).join(' ')||'未設定')}</td>
     <td class="num">${c.start?esc(c.start)+(c.end?' – '+esc(c.end):''):'未設定'}</td><td class="num">${n[c.name]||0}</td>
     <td class="acts"><button class="small" data-edit="${esc(c.name)}">編輯</button><button class="small" data-del="${esc(c.name)}">刪除</button></td></tr>`).join('')
-    ||'<tr><td colspan="5" class="muted">還沒有班級。</td></tr>';
+    ||'<tr><td colspan="6" class="muted">還沒有班級。</td></tr>';
+  const on=D.classes.filter(c=>csel.has(c.name)).length;
+  $('clAll').checked=D.classes.length>0&&on===D.classes.length;$('clAll').indeterminate=on>0&&on<D.classes.length;
+  $('clBulk').hidden=!csel.size;$('clSelN').textContent='已選 '+csel.size+' 個班級';
+  disarmCls();
 }
+let csel=new Set(),ckTimer=null;
+$('clAll').onchange=e=>{D.classes.forEach(c=>e.target.checked?csel.add(c.name):csel.delete(c.name));renderClasses()};
+$('clBody').addEventListener('change',e=>{const n=e.target.dataset.cpick;if(n===undefined)return;e.target.checked?csel.add(n):csel.delete(n);renderClasses()});
+$('ckClear').onclick=()=>{csel.clear();renderClasses()};
+$('clWith').onchange=disarmCls;
+function disarmCls(){const b=$('ckDel');delete b.dataset.armed;b.textContent='刪除';clearTimeout(ckTimer)}
+$('ckDel').onclick=()=>{
+  const b=$('ckDel'),names=[...csel],withS=$('clWith').checked;
+  const kids=D.students.filter(s=>csel.has(s.cls)),active=kids.filter(s=>s.status!=='停用').length;
+  if(!withS&&active){flash('選取的班級還有 '+active+' 位在學學生。要一起刪除，請勾選「連同班上的學生一起刪除」',true);return}
+  if(!b.dataset.armed){
+    b.dataset.armed='1';b.textContent='再按一次：刪除 '+names.length+' 個班級'+(withS&&kids.length?'和 '+kids.length+' 位學生':'');
+    ckTimer=setTimeout(disarmCls,4000);return;
+  }
+  csel.clear();
+  fast(()=>{D.classes=D.classes.filter(c=>!names.includes(c.name));if(withS)D.students=D.students.filter(s=>!names.includes(s.cls))},
+    'admin.deleteClasses',{names,withStudents:withS},'已刪除 '+names.length+' 個班級'+(withS&&kids.length?'和 '+kids.length+' 位學生':''));
+};
 function setClassForm(c){
   editClass=c||null;$('clName').value=c?c.name:'';$('clStart').value=c?c.start:'';$('clEnd').value=c?c.end:'';
   $('clDays').querySelectorAll('input').forEach(i=>{i.checked=!!c&&c.days.includes(i.value)});
