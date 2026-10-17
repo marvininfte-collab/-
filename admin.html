@@ -174,13 +174,14 @@ code{font-family:var(--num);font-size:13px;overflow-wrap:anywhere}
     <form class="row" id="stForm">
       <label class="grow">姓名<input id="stName" autocomplete="off"></label>
       <label>班級<select id="stCls"></select></label>
+      <label>第二個班級（選填）<select id="stCls2"></select></label>
       <button class="primary" id="stSave">新增</button>
       <button type="button" id="stCancel" hidden>取消編輯</button>
     </form>
     <details>
       <summary>整批匯入</summary>
       <div class="col" style="margin-top:10px">
-        <p class="muted">每行一位，寫「姓名,班級」。也可以從 Excel 複製兩欄直接貼上。名單裡沒有的班級會自動建立。</p>
+        <p class="muted">每行一位，寫「姓名,班級」；上兩個班就寫「姓名,班級1,班級2」。也可以從 Excel 複製兩欄直接貼上。名單裡沒有的班級會自動建立。</p>
         <textarea id="imText" placeholder="王小明,MJ9&#10;陳怡君,MJ12"></textarea>
         <div><button id="imBtn">匯入</button></div>
       </div>
@@ -304,13 +305,15 @@ function fillSelect(el,opts,keep){
   if(cur&&opts.some(o=>o[0]===cur))el.value=cur;
 }
 const classNames=()=>D.classes.map(c=>c.name);
+const clsOf=s=>s.classes||String(s.cls||'').split(/[、,，;；\/]+/).map(x=>x.trim()).filter(Boolean);
+const inCls=(s,c)=>clsOf(s).includes(c);
 const addMin=(hm,n)=>{const p=hm.split(':'),t=Math.min(1439,+p[0]*60+ +p[1]+n);return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0')};
 const weekday=d=>'日一二三四五六'[new Date(d+'T00:00:00').getDay()];
 
 function render(){
   const cls=classNames(),all=[['','全部班級']].concat(cls.map(c=>[c,c]));
   fillSelect($('tdCls'),all,true);fillSelect($('stFilter'),all,true);fillSelect($('cdCls'),all,true);
-  fillSelect($('stCls'),cls.map(c=>[c,c]),true);
+  fillSelect($('stCls'),cls.map(c=>[c,c]),true);fillSelect($('stCls2'),[['','無']].concat(cls.map(c=>[c,c])),true);
   $('tdDate').value=D.date;
   renderToday();renderStudents();renderClasses();renderCards();renderSettings();
 }
@@ -322,8 +325,9 @@ function renderToday(){
   const wd=weekday(D.date),remind=Number(D.settings['未到提醒分鐘'])||0;
   const f=$('tdCls').value,showAll=$('tdAll').checked;
   let due=0,here=0,gone=0,off=0,miss=0;
-  const rowsHtml=D.students.filter(s=>s.status!=='停用'||rec[s.id]).filter(s=>!f||s.cls===f).map(s=>{
-    const r=rec[s.id],c=cmap[s.cls],has=c&&c.days.includes(wd);
+  const rowsHtml=D.students.filter(s=>s.status!=='停用'||rec[s.id]).filter(s=>!f||inCls(s,f)).map(s=>{
+    const tc=clsOf(s).map(n=>cmap[n]).find(x=>x&&x.days.includes(wd));
+    const r=rec[s.id],c=tc||cmap[clsOf(s)[0]],has=!!tc;
     if(!r&&!has&&!showAll&&!leave.has(s.id))return '';
     let pill;
     if(r&&r.out){pill='<span class="pill info">已離班</span>';gone++}
@@ -349,7 +353,7 @@ $('tdReload').onclick=()=>run('admin.load',{},'已更新');
 /* 學生名單 */
 function renderStudents(){
   const f=$('stFilter').value,q=$('stSearch').value.trim();
-  const list=D.students.filter(s=>(!f||s.cls===f)&&(!q||s.name.includes(q)));
+  const list=D.students.filter(s=>(!f||inCls(s,f))&&(!q||s.name.includes(q)));
   for(const id of [...sel])if(!D.students.some(s=>s.id===id))sel.delete(id);
   $('stBody').innerHTML=list.map(s=>`<tr class="${s.status==='停用'?'off':''}${sel.has(s.id)?' sel':''}"><td><input type="checkbox" data-pick="${esc(s.id)}" ${sel.has(s.id)?'checked':''} aria-label="選取 ${esc(s.name)}" style="min-height:0"></td><td>${esc(s.name)}</td><td>${esc(s.cls)}</td>
     <td class="num">${esc(s.id)}</td><td class="num">${esc(s.bind)}</td><td class="num">${s.parents}</td>
@@ -385,7 +389,7 @@ $('bkDel').onclick=()=>{
 };
 $('stFilter').onchange=renderStudents;$('stSearch').oninput=renderStudents;
 function setStudentForm(s){
-  editStudent=s||null;$('stName').value=s?s.name:'';if(s)$('stCls').value=s.cls;
+  editStudent=s||null;$('stName').value=s?s.name:'';if(s){$('stCls').value=clsOf(s)[0]||'';$('stCls2').value=clsOf(s)[1]||''}else $('stCls2').value='';
   $('stTitle').textContent=s?'編輯學生：'+s.name:'新增學生';$('stSave').textContent=s?'儲存':'新增';$('stCancel').hidden=!s;
 }
 $('stCancel').onclick=()=>setStudentForm(null);
@@ -403,12 +407,12 @@ $('stBody').onclick=e=>{
 $('stForm').onsubmit=async e=>{
   e.preventDefault();
   if(!classNames().length){flash('請先到「班級」新增班級',true);return}
-  const st={name:$('stName').value.trim(),cls:$('stCls').value};
+  const st={name:$('stName').value.trim(),cls:[...new Set([$('stCls').value,$('stCls2').value].filter(Boolean))].join('、')};
   if(editStudent){st.id=editStudent.id;st.status=editStudent.status}
   if(await run('admin.saveStudent',{student:st},editStudent?'已儲存':'已新增 '+st.name))setStudentForm(null);
 };
 $('imBtn').onclick=async()=>{
-  const rows=$('imText').value.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map(l=>{const p=l.split(/[,，\t]+/).map(x=>x.trim());return{name:p[0],cls:p[1]}});
+  const rows=$('imText').value.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map(l=>{const p=l.split(/[,，\t]+/).map(x=>x.trim()).filter(Boolean);return{name:p[0],cls:p.slice(1).join('、')}});
   const bad=rows.filter(r=>!r.name||!r.cls).length;
   if(!rows.length){flash('請先貼上名單',true);return}
   if(bad){flash('有 '+bad+' 行缺少姓名或班級，請修正後再匯入',true);return}
@@ -418,7 +422,7 @@ $('imBtn').onclick=async()=>{
 /* 班級 */
 $('clDays').innerHTML=[...DAYS].map(d=>`<label><input type="checkbox" value="${d}" style="min-height:0">${d}</label>`).join('');
 function renderClasses(){
-  const n={};D.students.forEach(s=>{if(s.status!=='停用')n[s.cls]=(n[s.cls]||0)+1});
+  const n={};D.students.forEach(s=>{if(s.status!=='停用')clsOf(s).forEach(c=>n[c]=(n[c]||0)+1)});
   for(const c of [...csel])if(!D.classes.some(x=>x.name===c))csel.delete(c);
   $('clBody').innerHTML=D.classes.map(c=>`<tr class="${csel.has(c.name)?'sel':''}"><td><input type="checkbox" data-cpick="${esc(c.name)}" ${csel.has(c.name)?'checked':''} aria-label="選取 ${esc(c.name)}" style="min-height:0"></td><td>${esc(c.name)}</td><td>${esc([...DAYS].filter(d=>c.days.includes(d)).join(' ')||'未設定')}</td>
     <td class="num">${c.start?esc(c.start)+(c.end?' – '+esc(c.end):''):'未設定'}</td><td class="num">${n[c.name]||0}</td>
@@ -437,14 +441,14 @@ $('clWith').onchange=disarmCls;
 function disarmCls(){const b=$('ckDel');delete b.dataset.armed;b.textContent='刪除';clearTimeout(ckTimer)}
 $('ckDel').onclick=()=>{
   const b=$('ckDel'),names=[...csel],withS=$('clWith').checked;
-  const kids=D.students.filter(s=>csel.has(s.cls)),active=kids.filter(s=>s.status!=='停用').length;
+  const kids=D.students.filter(s=>clsOf(s).length&&clsOf(s).every(c=>csel.has(c))),active=kids.filter(s=>s.status!=='停用').length;
   if(!withS&&active){flash('選取的班級還有 '+active+' 位在學學生。要一起刪除，請勾選「連同班上的學生一起刪除」',true);return}
   if(!b.dataset.armed){
     b.dataset.armed='1';b.textContent='再按一次：刪除 '+names.length+' 個班級'+(withS&&kids.length?'和 '+kids.length+' 位學生':'');
     ckTimer=setTimeout(disarmCls,4000);return;
   }
   csel.clear();
-  fast(()=>{D.classes=D.classes.filter(c=>!names.includes(c.name));if(withS)D.students=D.students.filter(s=>!names.includes(s.cls))},
+  fast(()=>{D.classes=D.classes.filter(c=>!names.includes(c.name));D.students=D.students.filter(s=>!(withS&&clsOf(s).every(c=>names.includes(c))));D.students.forEach(s=>{const k=clsOf(s).filter(c=>!names.includes(c));if(k.length){s.classes=k;s.cls=k.join('、')}})},
     'admin.deleteClasses',{names,withStudents:withS},'已刪除 '+names.length+' 個班級'+(withS&&kids.length?'和 '+kids.length+' 位學生':''));
 };
 function setClassForm(c){
@@ -471,7 +475,7 @@ $('clForm').onsubmit=async e=>{
 /* QR 卡片 */
 function renderCards(){
   const f=$('cdCls').value,q=$('cdSearch').value.trim();
-  const list=D.students.filter(s=>s.status!=='停用'&&(!f||s.cls===f)&&(!q||s.name.includes(q)));
+  const list=D.students.filter(s=>s.status!=='停用'&&(!f||inCls(s,f))&&(!q||s.name.includes(q)));
   const v=$('cdStyle').value==='v';
   $('cdInfo').textContent=list.length?'共 '+list.length+' 張。列印時紙張選 A4、縮放選「實際大小」或 100%，沿虛線剪下即可，建議護貝成霧面。':'沒有符合的學生。';
   $('cdGrid').innerHTML=list.map(s=>{
@@ -479,7 +483,7 @@ function renderCards(){
     const [en,zh]=splitName(s.name),svg=qr.createSvgTag({cellSize:4,margin:4,scalable:true});
     const big=en||zh,small=en?zh:'';
     const fit=big.length>(en?9:5)?' style="font-size:'+(v?4.6:5.2)+'mm"':'';
-    const names=`<div class="en"${fit}>${esc(big)}</div>${small?`<div class="zh">${esc(small)}</div>`:''}<div><span class="cls">${esc(s.cls)}</span></div>`;
+    const names=`<div class="en"${fit}>${esc(big)}</div>${small?`<div class="zh">${esc(small)}</div>`:''}<div>${clsOf(s).map(c=>`<span class="cls">${esc(c)}</span>`).join(' ')}</div>`;
     return v
       ?`<div class="idc v"><div class="band"><span class="hole"></span><b>佳音鳳青</b><small>CHECK-IN CARD</small></div><div class="qr">${svg}</div><div class="info">${names}</div><div class="hint">進出補習班請刷卡</div><div class="stripe"></div></div>`
       :`<div class="idc h"><div class="band"><b>佳音鳳青</b><small>CHECK-IN CARD</small></div><div class="body"><div class="qr">${svg}</div><div class="info">${names}<div class="hint">進出補習班請刷卡</div></div></div><div class="stripe"></div></div>`;

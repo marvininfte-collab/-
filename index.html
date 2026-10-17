@@ -231,7 +231,7 @@ function renderList(){
   items.forEach(({s,r})=>{
     const li=document.createElement('li');if(r.out)li.className='gone';
     const who=document.createElement('span');who.className='who';who.textContent=s.name;
-    const c=document.createElement('span');c.className='cls';c.textContent=s.cls;who.appendChild(c);
+    const c=document.createElement('span');c.className='cls';c.textContent=s.today||s.cls;who.appendChild(c);
     const t=document.createElement('span');t.className='times';
     t.textContent=(r.in?hm(r.in):'--:--')+(r.out?' → '+hm(r.out):'');
     li.appendChild(who);li.appendChild(t);ol.appendChild(li);
@@ -268,7 +268,7 @@ function punch(id,manual){
   let ev=null;
   if(!r.in&&!r.out){
     ev={id,type:'in',t:now,manual:!!manual};
-    show('ok','到班打卡成功',s.name,s.cls+'・'+hm(now)+' 到班');
+    show('ok','到班打卡成功',s.name,(s.today||s.cls)+'・'+hm(now)+' 到班');
   }else if(!r.out){
     if(now-r.in<rescan*60000){show('warn','已經打過卡',s.name,hm(r.in)+' 到班');return}
     ev={id,type:'out',t:now,manual:!!manual};
@@ -327,7 +327,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 // 忘記帶卡
 const dlg=$('dlg');let curCls='';
 function renderPick(){
-  const classes=[...new Set(roster.map(s=>s.cls))].sort();
+  const classes=[...new Set(roster.flatMap(s=>s.classes||[s.cls]))].sort();
   if(!classes.includes(curCls))curCls=classes[0]||'';
   const p=$('pick');p.textContent='';
   classes.forEach(c=>{
@@ -335,7 +335,7 @@ function renderPick(){
     b.onclick=()=>{curCls=c;renderPick()};p.appendChild(b);
   });
   const n=$('names');n.textContent='';
-  roster.filter(s=>s.cls===curCls).forEach(s=>{
+  roster.filter(s=>(s.classes||[s.cls]).includes(curCls)).forEach(s=>{
     const b=document.createElement('button');b.textContent=s.name;
     b.onclick=()=>{dlg.close();punch(s.id,true)};n.appendChild(b);
   });

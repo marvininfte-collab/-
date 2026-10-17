@@ -177,6 +177,7 @@ let queue=LS.get('ct-queue',[]);
 let online=false,syncing=false;
 const keep=()=>{LS.set('ct-recs2',{day,map:recs,leaves});LS.set('ct-queue',queue)};
 const byId=()=>{const m={};roster.forEach(s=>m[s.id]=s);return m};
+const clsOf=s=>s.classes||[s.cls];
 const clsInfo=()=>{const m={};classes.forEach(c=>m[c.name]=c);return m};
 
 function api(action,data,c){
@@ -234,11 +235,11 @@ function splitName(name){
 }
 // 學生目前狀態：none 未到、in 在班、out 已離班、leave 請假
 function state(id){const r=recs[id]||{};return r.out?'out':r.in?'in':leaves[id]?'leave':'none'}
-function isLate(s){const r=recs[s.id]||{},c=clsInfo()[s.cls];return !!r.in&&(r.late||(!!c&&!!c.start&&hm(r.in)>c.start))}
+function isLate(s){const r=recs[s.id]||{},c=clsInfo()[s.today||clsOf(s)[0]];return !!r.in&&(r.late||(!!c&&!!c.start&&hm(r.in)>c.start))}
 
 function classOrder(){
   const wd='日一二三四五六'[new Date().getDay()],info=clsInfo();
-  const names=[...new Set(roster.map(s=>s.cls))];
+  const names=[...new Set(roster.flatMap(clsOf))];
   const today=n=>info[n]&&info[n].days&&info[n].days.includes(wd);
   return names.sort((a,b)=>(today(b)-today(a))||String(info[a]&&info[a].start||'99').localeCompare(String(info[b]&&info[b].start||'99'))||a.localeCompare(b));
 }
@@ -248,7 +249,7 @@ function render(){
   if(!order.includes(cur))cur=order[0]||'';
   const nav=$('classes');nav.textContent='';
   order.forEach(c=>{
-    const list=roster.filter(s=>s.cls===c),here=list.filter(s=>recs[s.id]&&recs[s.id].in).length;
+    const list=roster.filter(s=>clsOf(s).includes(c)),here=list.filter(s=>recs[s.id]&&recs[s.id].in).length;
     const b=document.createElement('button');b.setAttribute('aria-pressed',c===cur);
     const t=document.createElement('span');t.textContent=c;
     const n=document.createElement('small');n.textContent=here+'/'+list.length;
@@ -257,7 +258,7 @@ function render(){
   document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode===mode));
   $('hint').textContent=HINT[mode];
   const q=$('q').value.trim();
-  const list=roster.filter(s=>q?s.name.includes(q):s.cls===cur);
+  const list=roster.filter(s=>q?s.name.includes(q):clsOf(s).includes(cur));
   const g=$('grid');g.textContent='';
   list.forEach(s=>{
     const r=recs[s.id]||{},st=state(s.id),b=document.createElement('button');
@@ -273,7 +274,7 @@ function render(){
   });
   $('none').hidden=list.length>0||!roster.length;
   $('none').textContent=q?'找不到「'+q+'」。':'這個班級沒有學生。';
-  const cl=roster.filter(s=>s.cls===cur),cnt={none:0,in:0,out:0,leave:0};cl.forEach(s=>cnt[state(s.id)]++);
+  const cl=roster.filter(s=>clsOf(s).includes(cur)),cnt={none:0,in:0,out:0,leave:0};cl.forEach(s=>cnt[state(s.id)]++);
   const late=cl.filter(isLate).length;
   $('summary').innerHTML=`<span><b>${cnt.in}</b>在班</span><span><b>${cnt.out}</b>已離班</span><span><b>${late}</b>遲到</span><span><b>${cnt.leave}</b>請假</span><span><b>${cnt.none}</b>未到</span>`;
   const c=clsInfo()[cur];
@@ -324,7 +325,7 @@ $('undo').onclick=()=>{
 let armedBtn=null,armTimer=null;
 function disarm(){if(armedBtn){armedBtn.classList.remove('armed');armedBtn.textContent=armedBtn.dataset.label;armedBtn=null}clearTimeout(armTimer)}
 function bulk(btn,kind){
-  const cl=roster.filter(s=>s.cls===cur);
+  const cl=roster.filter(s=>clsOf(s).includes(cur));
   const targets=kind==='in'?cl.filter(s=>state(s.id)==='none'):cl.filter(s=>state(s.id)==='in');
   if(!targets.length){disarm();return toast(kind==='in'?cur+' 沒有未到的學生':cur+' 沒有在班的學生',null)}
   if(armedBtn!==btn){
