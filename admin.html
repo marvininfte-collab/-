@@ -91,14 +91,44 @@ code{font-family:var(--num);font-size:13px;overflow-wrap:anywhere}
 .acct{border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
 .acct .hook{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .acct .hook code{flex:1;min-width:0}
+/* 學生出示卡：尺寸用公釐，螢幕預覽和列印一樣大 */
+.idgrid{display:flex;flex-wrap:wrap;gap:4mm}
+.idc{--navy:#1b3a7a;--sky:#e6eefb;--sun:#f2b134;--ink2:#18233a;--grey:#6a7690;
+  position:relative;background:#fff;color:var(--ink2);border:0.3mm solid #cfd6e0;border-radius:3mm;overflow:hidden;
+  font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact;break-inside:avoid;flex:none}
+.idc .band{background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 4mm}
+.idc .band b{font-size:4.2mm;letter-spacing:.6mm;font-weight:800}
+.idc .band small{font-size:2.1mm;letter-spacing:.5mm;color:#b9cdf3;font-weight:700}
+.idc .qr{background:#fff;line-height:0}
+.idc .qr svg{width:100%;height:auto;display:block}
+.idc .en{font-size:6.4mm;font-weight:800;color:var(--navy);line-height:1.1;letter-spacing:.1mm;overflow-wrap:anywhere}
+.idc .zh{font-size:4.6mm;font-weight:700;line-height:1.3}
+.idc .cls{display:inline-block;background:var(--sky);color:var(--navy);font-size:2.8mm;font-weight:700;border-radius:1.4mm;padding:.4mm 2mm;margin-top:1.6mm}
+.idc .hint{font-size:2.3mm;color:var(--grey);letter-spacing:.15mm}
+.idc .stripe{position:absolute;left:0;right:0;bottom:0;height:1.6mm;background:var(--sun)}
+/* 橫式：85.6 × 54 mm（信用卡大小） */
+.idc.h{width:85.6mm;height:54mm}
+.idc.h .band{height:10.5mm}
+.idc.h .body{display:grid;grid-template-columns:33mm 1fr;gap:3.5mm;padding:3.2mm 4mm 0 3.5mm;align-items:start}
+.idc.h .info{display:flex;flex-direction:column;min-width:0;height:33mm;padding-top:1mm}
+.idc.h .hint{margin-top:auto}
+/* 直式：54 × 86 mm（書包吊牌） */
+.idc.v{width:54mm;height:86mm;text-align:center}
+.idc.v .band{height:18mm;flex-direction:column;justify-content:flex-end;padding:0 3mm 2.2mm;gap:.6mm}
+.idc.v .hole{position:absolute;top:2.6mm;left:50%;width:6mm;height:2.4mm;margin-left:-3mm;border-radius:1.2mm;background:#fff;opacity:.9}
+.idc.v .qr{width:35mm;margin:3mm auto 0}
+.idc.v .info{padding:1.5mm 3mm 0;display:flex;flex-direction:column;align-items:center}
+.idc.v .hint{position:absolute;left:0;right:0;bottom:3.2mm}
 @media print{
+  @page{size:A4;margin:7mm}
   body{background:#fff;color:#000;padding:0}
-  .top,.tabs,.noprint,.panel>*:not(.cards){display:none!important}
-  .panel{border:0;padding:0}
+  .top,.tabs,.noprint,.panel>*:not(.idgrid){display:none!important}
+  .panel{border:0;padding:0;background:none}
+  .wrap{max-width:none}
   section:not(#t-cards){display:none!important}
-  .cards{grid-template-columns:repeat(4,1fr);gap:8px}
-  .card{border:1px solid #999;break-inside:avoid}
-  .card small{color:#333}
+  .idgrid{gap:3mm;justify-content:center}
+  .idc{border:0.2mm dashed #9aa6b8}
 }
 </style>
 </head>
@@ -185,10 +215,11 @@ code{font-family:var(--num);font-size:13px;overflow-wrap:anywhere}
     <div class="row noprint">
       <label>班級<select id="cdCls"></select></label>
       <label class="grow">只印某位學生（輸入姓名）<input id="cdSearch" autocomplete="off"></label>
+      <label>樣式<select id="cdStyle"><option value="h">橫式卡片（85.6×54mm，一頁 10 張）</option><option value="v">直式吊牌（54×86mm，一頁 9 張）</option></select></label>
       <button class="primary" id="cdPrint">列印</button>
     </div>
     <p class="muted noprint" id="cdInfo"></p>
-    <div class="cards" id="cdGrid"></div>
+    <div class="idgrid" id="cdGrid"></div>
   </section>
 
   <section id="t-settings" class="panel" hidden>
@@ -441,12 +472,24 @@ $('clForm').onsubmit=async e=>{
 function renderCards(){
   const f=$('cdCls').value,q=$('cdSearch').value.trim();
   const list=D.students.filter(s=>s.status!=='停用'&&(!f||s.cls===f)&&(!q||s.name.includes(q)));
-  $('cdInfo').textContent=list.length?'共 '+list.length+' 張。列印後貼在聯絡簿封面或書包吊牌上。':'沒有符合的學生。';
+  const v=$('cdStyle').value==='v';
+  $('cdInfo').textContent=list.length?'共 '+list.length+' 張。列印時紙張選 A4、縮放選「實際大小」或 100%，沿虛線剪下即可，建議護貝成霧面。':'沒有符合的學生。';
   $('cdGrid').innerHTML=list.map(s=>{
     const qr=qrcode(0,'M');qr.addData(s.id);qr.make();
-    return `<div class="card"><div class="qr">${qr.createSvgTag({cellSize:4,margin:8,scalable:true})}</div><b>${esc(s.name)}</b><small>${esc(s.cls)}</small></div>`;
+    const [en,zh]=splitName(s.name),svg=qr.createSvgTag({cellSize:4,margin:4,scalable:true});
+    const big=en||zh,small=en?zh:'';
+    const fit=big.length>(en?9:5)?' style="font-size:'+(v?4.6:5.2)+'mm"':'';
+    const names=`<div class="en"${fit}>${esc(big)}</div>${small?`<div class="zh">${esc(small)}</div>`:''}<div><span class="cls">${esc(s.cls)}</span></div>`;
+    return v
+      ?`<div class="idc v"><div class="band"><span class="hole"></span><b>佳音鳳青</b><small>CHECK-IN CARD</small></div><div class="qr">${svg}</div><div class="info">${names}</div><div class="hint">進出補習班請刷卡</div><div class="stripe"></div></div>`
+      :`<div class="idc h"><div class="band"><b>佳音鳳青</b><small>CHECK-IN CARD</small></div><div class="body"><div class="qr">${svg}</div><div class="info">${names}<div class="hint">進出補習班請刷卡</div></div></div><div class="stripe"></div></div>`;
   }).join('');
 }
+function splitName(name){
+  const m=String(name).trim().match(/^([A-Za-z][A-Za-z0-9.'’\- ]*?)\s*([\u3400-\u9fff].*)$/);
+  return m?[m[1].trim(),m[2].trim()]:['',String(name).trim()];
+}
+$('cdStyle').onchange=renderCards;
 $('cdCls').onchange=renderCards;$('cdSearch').oninput=renderCards;
 $('cdPrint').onclick=()=>window.print();
 
