@@ -57,7 +57,10 @@ h1{font-size:24px;margin:0;letter-spacing:.04em}
 
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .kid{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:92px;padding:12px 14px;text-align:left;border-radius:14px;border:2px solid var(--line);background:var(--surface)}
-.kid b{font-size:24px;line-height:1.25;overflow-wrap:anywhere}
+.kid b{font-size:24px;line-height:1.2;overflow-wrap:anywhere;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.kid i{font-style:normal;font-size:19px;line-height:1.3;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.kid.out i,.kid.leave i{color:var(--muted)}
+.kid span{margin-top:auto}
 .kid span{font-size:14px;color:var(--muted);font-variant-numeric:tabular-nums}
 .kid.in{background:var(--ok-bg);border-color:var(--ok)} .kid.in span{color:var(--ok);font-weight:600}
 .kid.out{background:var(--bye-bg);border-color:transparent} .kid.out b{color:var(--muted);font-weight:500} .kid.out span{color:var(--bye)}
@@ -224,6 +227,11 @@ function renderClock(){
   if(ymd()!==day){day=ymd();recs={};leaves={};keep();render()}
 }
 
+// 「Amy 林語晨」拆成英文名和中文名兩行；沒有英文名就只顯示中文
+function splitName(name){
+  const m=String(name).trim().match(/^([A-Za-z][A-Za-z0-9.'’\- ]*?)\s*([\u3400-\u9fff].*)$/);
+  return m?[m[1].trim(),m[2].trim()]:['',String(name).trim()];
+}
 // 學生目前狀態：none 未到、in 在班、out 已離班、leave 請假
 function state(id){const r=recs[id]||{};return r.out?'out':r.in?'in':leaves[id]?'leave':'none'}
 function isLate(s){const r=recs[s.id]||{},c=clsInfo()[s.cls];return !!r.in&&(r.late||(!!c&&!!c.start&&hm(r.in)>c.start))}
@@ -254,11 +262,14 @@ function render(){
   list.forEach(s=>{
     const r=recs[s.id]||{},st=state(s.id),b=document.createElement('button');
     b.className='kid'+(st==='none'?'':' '+st);b.dataset.id=s.id;
-    const n=document.createElement('b');n.textContent=s.name;
+    const [en,zh]=splitName(s.name);
+    const n=document.createElement('b');n.textContent=en||zh;
+    const L=(en||zh).length*(en?1:1.8);if(L>9)n.style.fontSize=L>12?'16px':'19px';   // 長名字縮小字級，不截斷
+    if(en&&zh){const z=document.createElement('i');z.textContent=zh;b.append(n,z)}else b.append(n);
     const t=document.createElement('span');
     t.textContent=st==='out'?hm(r.in||r.out)+' → '+hm(r.out)+(r.auto?' 自動':''):st==='in'?hm(r.in)+' 到班':st==='leave'?'請假':(q?s.cls+'・':'')+'未到';
     if(isLate(s)){const g2=document.createElement('em');g2.className='tag';g2.textContent='遲到';g2.style.fontStyle='normal';t.appendChild(g2)}
-    b.append(n,t);g.appendChild(b);
+    b.append(t);g.appendChild(b);
   });
   $('none').hidden=list.length>0||!roster.length;
   $('none').textContent=q?'找不到「'+q+'」。':'這個班級沒有學生。';
