@@ -33,6 +33,9 @@ button{cursor:pointer;border:1px solid var(--line);background:var(--surface);bor
 button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
 button.small{min-height:32px;padding:3px 10px;font-size:13px}
 button.danger{color:var(--bad);border-color:var(--bad)}
+.bulkbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--warn-bg);border-radius:10px;padding:8px 12px}
+.bulkbar span{font-weight:600;margin-right:6px}
+tr.sel td{background:var(--info-bg)}
 button:disabled{opacity:.5;cursor:default}
 input,select,textarea{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:8px 10px;min-height:40px;max-width:100%}
 textarea{width:100%;min-height:120px;font-family:var(--num);font-size:14px}
@@ -156,8 +159,9 @@ code{font-family:var(--num);font-size:13px;overflow-wrap:anywhere}
       <label>篩選班級<select id="stFilter"></select></label>
       <label class="grow">搜尋姓名<input id="stSearch" autocomplete="off"></label>
     </div>
-    <p class="muted">綁定碼是給家長在官方 LINE 輸入用的，請個別交給家長，不要印在卡片上。要刪除學生，請先按「停用」，再按「刪除」。</p>
-    <div class="scroll"><table><thead><tr><th>姓名</th><th>班級</th><th>學生代碼</th><th>家長綁定碼</th><th>已綁家長</th><th>狀態</th><th></th></tr></thead><tbody id="stBody"></tbody></table></div>
+    <p class="muted">綁定碼是給家長在官方 LINE 輸入用的，請個別交給家長，不要印在卡片上。要刪除學生，請先按「停用」，再按「刪除」；也可以勾選左邊的方塊，一次處理多位。</p>
+    <div class="bulkbar" id="stBulk" hidden><span id="stSelN"></span><button class="small" id="bkStop">停用</button><button class="small" id="bkOn">恢復</button><button class="small danger" id="bkDel">刪除</button><button class="small" id="bkClear">取消選取</button></div>
+    <div class="scroll"><table><thead><tr><th><input type="checkbox" id="stAll" aria-label="全選" style="min-height:0"></th><th>姓名</th><th>班級</th><th>學生代碼</th><th>家長綁定碼</th><th>已綁家長</th><th>狀態</th><th></th></tr></thead><tbody id="stBody"></tbody></table></div>
   </section>
 
   <section id="t-classes" class="panel" hidden>
@@ -312,12 +316,39 @@ $('tdReload').onclick=()=>run('admin.load',{},'已更新');
 function renderStudents(){
   const f=$('stFilter').value,q=$('stSearch').value.trim();
   const list=D.students.filter(s=>(!f||s.cls===f)&&(!q||s.name.includes(q)));
-  $('stBody').innerHTML=list.map(s=>`<tr class="${s.status==='停用'?'off':''}"><td>${esc(s.name)}</td><td>${esc(s.cls)}</td>
+  for(const id of [...sel])if(!D.students.some(s=>s.id===id))sel.delete(id);
+  $('stBody').innerHTML=list.map(s=>`<tr class="${s.status==='停用'?'off':''}${sel.has(s.id)?' sel':''}"><td><input type="checkbox" data-pick="${esc(s.id)}" ${sel.has(s.id)?'checked':''} aria-label="選取 ${esc(s.name)}" style="min-height:0"></td><td>${esc(s.name)}</td><td>${esc(s.cls)}</td>
     <td class="num">${esc(s.id)}</td><td class="num">${esc(s.bind)}</td><td class="num">${s.parents}</td>
     <td>${s.status==='停用'?'<span class="pill none">停用</span>':'<span class="pill ok">在學</span>'}</td>
     <td class="acts"><button class="small" data-edit="${esc(s.id)}">編輯</button><button class="small" data-toggle="${esc(s.id)}">${s.status==='停用'?'恢復':'停用'}</button>${s.status==='停用'?`<button class="small danger" data-del="${esc(s.id)}">刪除</button>`:''}</td></tr>`).join('')
-    ||'<tr><td colspan="7" class="muted">還沒有學生。可以在上方新增，或用整批匯入。</td></tr>';
+    ||'<tr><td colspan="8" class="muted">還沒有學生。可以在上方新增，或用整批匯入。</td></tr>';
+  shown=list.map(s=>s.id);
+  const on=shown.filter(id=>sel.has(id)).length;
+  $('stAll').checked=shown.length>0&&on===shown.length;$('stAll').indeterminate=on>0&&on<shown.length;
+  $('stBulk').hidden=!sel.size;$('stSelN').textContent='已選 '+sel.size+' 位';
+  disarmBulk();
 }
+let sel=new Set(),shown=[];
+$('stAll').onchange=e=>{shown.forEach(id=>e.target.checked?sel.add(id):sel.delete(id));renderStudents()};
+$('stBody').addEventListener('change',e=>{const id=e.target.dataset.pick;if(!id)return;e.target.checked?sel.add(id):sel.delete(id);renderStudents()});
+$('bkClear').onclick=()=>{sel.clear();renderStudents()};
+function bulkStatus(to){
+  const ids=[...sel],n=ids.length;
+  fast(()=>{D.students.forEach(s=>{if(sel.has(s.id))s.status=to})},'admin.setStatus',{ids,status:to},(to==='停用'?'已停用 ':'已恢復 ')+n+' 位');
+}
+$('bkStop').onclick=()=>bulkStatus('停用');
+$('bkOn').onclick=()=>bulkStatus('在學');
+let bkTimer=null;
+function disarmBulk(){const b=$('bkDel');delete b.dataset.armed;b.textContent='刪除';clearTimeout(bkTimer)}
+$('bkDel').onclick=()=>{
+  const b=$('bkDel'),ids=[...sel],active=D.students.filter(s=>sel.has(s.id)&&s.status!=='停用').length;
+  if(!b.dataset.armed){
+    b.dataset.armed='1';b.textContent='再按一次：刪除 '+ids.length+' 位'+(active?'（含在學 '+active+' 位）':'');
+    bkTimer=setTimeout(disarmBulk,4000);return;
+  }
+  const n=ids.length;sel.clear();
+  fast(()=>{D.students=D.students.filter(s=>!ids.includes(s.id))},'admin.deleteStudents',{ids},'已刪除 '+n+' 位學生');
+};
 $('stFilter').onchange=renderStudents;$('stSearch').oninput=renderStudents;
 function setStudentForm(s){
   editStudent=s||null;$('stName').value=s?s.name:'';if(s)$('stCls').value=s.cls;
