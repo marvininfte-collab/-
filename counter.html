@@ -50,6 +50,10 @@ h1{font-size:24px;margin:0;letter-spacing:.04em}
 .classes button small{font-family:var(--num);color:var(--muted);font-variant-numeric:tabular-nums}
 .classes button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
 .classes button[aria-pressed="true"] small{color:inherit;opacity:.75}
+.classes{flex-direction:column;align-items:stretch}
+.crow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.classes button.today:not([aria-pressed="true"]){border-color:var(--ok)}
+.classes .glabel{font-size:13px;font-weight:700;color:var(--muted);align-self:center;min-width:3em}
 .tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .tools .grow{flex:1;min-width:180px}
 .legend{display:flex;gap:12px;font-size:14px;color:var(--muted);flex-wrap:wrap}
@@ -237,23 +241,25 @@ function splitName(name){
 function state(id){const r=recs[id]||{};return r.out?'out':r.in?'in':leaves[id]?'leave':'none'}
 function isLate(s){const r=recs[s.id]||{},c=clsInfo()[s.today||clsOf(s)[0]];return !!r.in&&(r.late||(!!c&&!!c.start&&hm(r.in)>c.start))}
 
-function classOrder(){
-  const wd='日一二三四五六'[new Date().getDay()],info=clsInfo();
-  const names=[...new Set(roster.flatMap(clsOf))];
-  const today=n=>info[n]&&info[n].days&&info[n].days.includes(wd);
-  return names.sort((a,b)=>(today(b)-today(a))||String(info[a]&&info[a].start||'99').localeCompare(String(info[b]&&info[b].start||'99'))||a.localeCompare(b));
-}
+const CLS_GROUPS=['MJ','TJ','其他'];
+const clsGroup=n=>/^\s*MJ/i.test(n)?'MJ':/^\s*TJ/i.test(n)?'TJ':'其他';
+const clsCmp=(a,b)=>(CLS_GROUPS.indexOf(clsGroup(a))-CLS_GROUPS.indexOf(clsGroup(b)))||a.localeCompare(b,'zh-Hant',{numeric:true,sensitivity:'base'});
+const hasToday=n=>{const c=clsInfo()[n];return !!(c&&c.days&&c.days.includes('日一二三四五六'[new Date().getDay()]))};
+function classOrder(){return [...new Set(roster.flatMap(clsOf))].sort(clsCmp)}
 const HINT={in:'點名字登記到班。',late:'點名字登記到班，並標記遲到。',out:'點在班學生的名字登記離班。',leave:'點名字登記請假，再點一次取消請假。'};
 function render(){
   const order=classOrder();
-  if(!order.includes(cur))cur=order[0]||'';
+  if(!order.includes(cur))cur=order.find(hasToday)||order[0]||'';
   const nav=$('classes');nav.textContent='';
+  let row=null,lastG='';
   order.forEach(c=>{
+    if(clsGroup(c)!==lastG){lastG=clsGroup(c);row=document.createElement('div');row.className='crow';
+      const h=document.createElement('span');h.className='glabel';h.textContent=lastG;row.appendChild(h);nav.appendChild(row)}
     const list=roster.filter(s=>clsOf(s).includes(c)),here=list.filter(s=>recs[s.id]&&recs[s.id].in).length;
-    const b=document.createElement('button');b.setAttribute('aria-pressed',c===cur);
+    const b=document.createElement('button');b.setAttribute('aria-pressed',c===cur);if(hasToday(c))b.classList.add('today');
     const t=document.createElement('span');t.textContent=c;
     const n=document.createElement('small');n.textContent=here+'/'+list.length;
-    b.append(t,n);b.onclick=()=>{cur=c;LS.set('ct-class',cur);$('q').value='';disarm();render()};nav.appendChild(b);
+    b.append(t,n);b.onclick=()=>{cur=c;LS.set('ct-class',cur);$('q').value='';disarm();render()};row.appendChild(b);
   });
   document.querySelectorAll('.seg button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mode===mode));
   $('hint').textContent=HINT[mode];

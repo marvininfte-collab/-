@@ -327,7 +327,8 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 // 忘記帶卡
 const dlg=$('dlg');let curCls='';
 function renderPick(){
-  const classes=[...new Set(roster.flatMap(s=>s.classes||[s.cls]))].sort();
+  const grp=n=>/^\s*MJ/i.test(n)?0:/^\s*TJ/i.test(n)?1:2;
+  const classes=[...new Set(roster.flatMap(s=>s.classes||[s.cls]))].sort((a,b)=>(grp(a)-grp(b))||a.localeCompare(b,'zh-Hant',{numeric:true}));
   if(!classes.includes(curCls))curCls=classes[0]||'';
   const p=$('pick');p.textContent='';
   classes.forEach(c=>{

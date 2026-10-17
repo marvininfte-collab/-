@@ -33,6 +33,7 @@ button{cursor:pointer;border:1px solid var(--line);background:var(--surface);bor
 button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
 button.small{min-height:32px;padding:3px 10px;font-size:13px}
 button.danger{color:var(--bad);border-color:var(--bad)}
+tr.grp td{font-weight:700;font-size:13px;color:var(--muted);background:var(--bg);letter-spacing:.08em;padding-top:12px}
 .bulkbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--warn-bg);border-radius:10px;padding:8px 12px}
 .bulkbar span{font-weight:600;margin-right:6px}
 tr.sel td{background:var(--info-bg)}
@@ -304,16 +305,27 @@ function fillSelect(el,opts,keep){
   el.innerHTML=opts.map(o=>`<option value="${esc(o[0])}">${esc(o[1])}</option>`).join('');
   if(cur&&opts.some(o=>o[0]===cur))el.value=cur;
 }
+const CLS_GROUPS=['MJ','TJ','其他'];
+const clsGroup=n=>/^\s*MJ/i.test(n)?'MJ':/^\s*TJ/i.test(n)?'TJ':'其他';
+const clsCmp=(a,b)=>(CLS_GROUPS.indexOf(clsGroup(a))-CLS_GROUPS.indexOf(clsGroup(b)))||a.localeCompare(b,'zh-Hant',{numeric:true,sensitivity:'base'});
 const classNames=()=>D.classes.map(c=>c.name);
+// 班級下拉選單依 MJ／TJ／其他 分組
+function fillClassSelect(el,lead){
+  const cur=el.value,names=classNames();
+  el.innerHTML=(lead||[]).map(o=>`<option value="${esc(o[0])}">${esc(o[1])}</option>`).join('')+
+    CLS_GROUPS.map(g=>{const ns=names.filter(n=>clsGroup(n)===g);return ns.length?`<optgroup label="${g}">${ns.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('')}</optgroup>`:''}).join('');
+  if([...el.options].some(o=>o.value===cur))el.value=cur;
+}
 const clsOf=s=>s.classes||String(s.cls||'').split(/[、,，;；\/]+/).map(x=>x.trim()).filter(Boolean);
 const inCls=(s,c)=>clsOf(s).includes(c);
 const addMin=(hm,n)=>{const p=hm.split(':'),t=Math.min(1439,+p[0]*60+ +p[1]+n);return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0')};
 const weekday=d=>'日一二三四五六'[new Date(d+'T00:00:00').getDay()];
 
 function render(){
-  const cls=classNames(),all=[['','全部班級']].concat(cls.map(c=>[c,c]));
-  fillSelect($('tdCls'),all,true);fillSelect($('stFilter'),all,true);fillSelect($('cdCls'),all,true);
-  fillSelect($('stCls'),cls.map(c=>[c,c]),true);fillSelect($('stCls2'),[['','無']].concat(cls.map(c=>[c,c])),true);
+  D.classes.sort((a,b)=>clsCmp(a.name,b.name));
+  const all=[['','全部班級']];
+  ['tdCls','stFilter','cdCls'].forEach(id=>fillClassSelect($(id),all));
+  fillClassSelect($('stCls'));fillClassSelect($('stCls2'),[['','無']]);
   $('tdDate').value=D.date;
   renderToday();renderStudents();renderClasses();renderCards();renderSettings();
 }
@@ -353,7 +365,7 @@ $('tdReload').onclick=()=>run('admin.load',{},'已更新');
 /* 學生名單 */
 function renderStudents(){
   const f=$('stFilter').value,q=$('stSearch').value.trim();
-  const list=D.students.filter(s=>(!f||inCls(s,f))&&(!q||s.name.includes(q)));
+  const list=D.students.filter(s=>(!f||inCls(s,f))&&(!q||s.name.includes(q))).sort((a,b)=>clsCmp(clsOf(a)[0]||'',clsOf(b)[0]||'')||a.name.localeCompare(b.name,'zh-Hant',{numeric:true}));
   for(const id of [...sel])if(!D.students.some(s=>s.id===id))sel.delete(id);
   $('stBody').innerHTML=list.map(s=>`<tr class="${s.status==='停用'?'off':''}${sel.has(s.id)?' sel':''}"><td><input type="checkbox" data-pick="${esc(s.id)}" ${sel.has(s.id)?'checked':''} aria-label="選取 ${esc(s.name)}" style="min-height:0"></td><td>${esc(s.name)}</td><td>${esc(s.cls)}</td>
     <td class="num">${esc(s.id)}</td><td class="num">${esc(s.bind)}</td><td class="num">${s.parents}</td>
@@ -424,7 +436,8 @@ $('clDays').innerHTML=[...DAYS].map(d=>`<label><input type="checkbox" value="${d
 function renderClasses(){
   const n={};D.students.forEach(s=>{if(s.status!=='停用')clsOf(s).forEach(c=>n[c]=(n[c]||0)+1)});
   for(const c of [...csel])if(!D.classes.some(x=>x.name===c))csel.delete(c);
-  $('clBody').innerHTML=D.classes.map(c=>`<tr class="${csel.has(c.name)?'sel':''}"><td><input type="checkbox" data-cpick="${esc(c.name)}" ${csel.has(c.name)?'checked':''} aria-label="選取 ${esc(c.name)}" style="min-height:0"></td><td>${esc(c.name)}</td><td>${esc([...DAYS].filter(d=>c.days.includes(d)).join(' ')||'未設定')}</td>
+  let lastG='';
+  $('clBody').innerHTML=D.classes.map(c=>(clsGroup(c.name)!==lastG?`<tr class="grp"><td colspan="6">${(lastG=clsGroup(c.name))}</td></tr>`:'')+`<tr class="${csel.has(c.name)?'sel':''}"><td><input type="checkbox" data-cpick="${esc(c.name)}" ${csel.has(c.name)?'checked':''} aria-label="選取 ${esc(c.name)}" style="min-height:0"></td><td>${esc(c.name)}</td><td>${esc([...DAYS].filter(d=>c.days.includes(d)).join(' ')||'未設定')}</td>
     <td class="num">${c.start?esc(c.start)+(c.end?' – '+esc(c.end):''):'未設定'}</td><td class="num">${n[c.name]||0}</td>
     <td class="acts"><button class="small" data-edit="${esc(c.name)}">編輯</button><button class="small" data-del="${esc(c.name)}">刪除</button></td></tr>`).join('')
     ||'<tr><td colspan="6" class="muted">還沒有班級。</td></tr>';
